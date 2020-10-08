@@ -1,3 +1,4 @@
+import java.nio.ByteOrder;
 import java.util.Arrays;
 
 import static util.KalynaConsts.*;
@@ -9,9 +10,6 @@ public class Kalyna {
     int nr;
     long[] state;
     long[][] roundKeys;
-
-    long blockLength = 128;
-    long keyLength = 128;
 
     Kalyna(long blockLength, long keyLength) {
         if (blockLength == kBLOCK_128) {
@@ -70,7 +68,7 @@ public class Kalyna {
     }
 
     private void insSubBytes() {
-        int[] s = state;
+        long[] s = state;
         for (int i = 0; i < nb; ++i) {
             state[i] = sBOXES_DEC[0][(int) (s[i] & 0x00000000000000FFL)] |
                     (sBOXES_DEC[1][(int) ((s[i] & 0x000000000000FF00L) >> 8)] << 8) |
@@ -85,8 +83,8 @@ public class Kalyna {
 
     private void shiftRows() {
         int shift = -1;
-        int[] s = wordsToBytes(nb, state);
-        int[] ns = new int[nb];
+        long[] s = wordsToBytes(nb, state);
+        long[] ns = new long[nb];
 
         for (int row = 0; row < 8; ++row) {
             if (row % (8 / nb) == 0) {
@@ -200,7 +198,7 @@ public class Kalyna {
     }
 
     private void rotate(int state_size, long[] state_value) {
-        int temp = state_value[0];
+        long temp = state_value[0];
         for (int i = 1; i < state_size; ++i) {
             state_value[i - 1] = state_value[i];
         }
@@ -214,13 +212,13 @@ public class Kalyna {
     }
 
     // ?
-    private void rotateLeft(int state_size, int[] state_value) {
+    private void rotateLeft(int state_size, long[] state_value) {
         int rotate_bytes = 2 * state_size + 3;
         int bytes_num = state_size * (kBITS_IN_WORD / kBITS_IN_BYTE);
 
         long[] bytes = wordsToBytes(state_size, state_value);
 
-        long [] buffer = Arrays.copyOf(bytes, rotate_bytes);
+        long[] buffer = Arrays.copyOf(bytes, rotate_bytes);
         System.arraycopy(bytes, rotate_bytes, bytes, 0, bytes_num - rotate_bytes);
         System.arraycopy(buffer, 0, bytes, bytes_num - rotate_bytes, rotate_bytes);
 
@@ -249,7 +247,7 @@ public class Kalyna {
         addRoundKeyExpand(k0);
         encipherRound();
 
-        return(Arrays.copyOf(state, nb));
+        return (Arrays.copyOf(state, nb));
     }
 
     private void keyExpandEven(long[] key, long[] kt) {
@@ -307,6 +305,88 @@ public class Kalyna {
         }
     }
 
+    private void keyExpandOdd() {
+        for (int i = 1; i < nr; i += 2) {
+            roundKeys[i] = Arrays.copyOf(roundKeys[i - 1], nb);
+            rotateLeft(nb, roundKeys[i]);
+        }
+    }
+
+    private void kalynaKeyExpand(long[] key) {
+        long[] kt = keyExpandKt(key);
+        keyExpandEven(key, kt);
+        keyExpandOdd();
+    }
+
+    public long[] kalynaEncipher(long[] plainText) {
+        int round = 0;
+        state = Arrays.copyOf(plainText, nb);
+
+        addRoundKey(round);
+        for (round = 1; round < nr; ++round) {
+            encipherRound();
+            xorRoundKey(round);
+        }
+        encipherRound();
+        addRoundKey(nr);
+
+        return (Arrays.copyOf(state, nb));
+    }
+
+    public long[] kalynaDecipher(long[] cipherText) {
+        int round = nr;
+        state = Arrays.copyOf(cipherText, nb);
+
+        subRoundKey(round);
+        for (round = nr - 1; round > 0; --round) {
+            decipherRound();
+            xorRoundKey(round);
+        }
+        decipherRound();
+        subRoundKey(0);
+
+        return (Arrays.copyOf(state, nb));
+    }
+
+    private long[] wordsToBytes(int length, long[] words) {
+        long[] bytes = new long[length];
+        if (isBigEndian()) {
+            for (int i = 0; i < length; ++i) {
+                bytes[i] = reverseWord(words[i]);
+            }
+        }
+        return bytes;
+    }
+
+    private long[] bytesToWords(int length, long[] bytes) {
+        long[] words = new long[length];
+        if (isBigEndian()) {
+            for (int i = 0; i < length; ++i) {
+                words[i] = reverseWord(bytes[i]);
+            }
+        }
+        return words;
+    }
+
+    private long reverseWord(long word) {
+        long reversed = 0;
+        while (word != 0) {
+            reversed <<= 1;
+            reversed |= (word & 1);
+            word >>= 1;
+        }
+        return reversed;
+    }
+
+    private boolean isBigEndian() {
+        return (ByteOrder.nativeOrder().equals(ByteOrder.BIG_ENDIAN));
+    }
+
+    public void printState(int length, long[] state) {
+        for (int i = length - 1; i >= 0; --i) {
+            System.out.format("%20.0f%n", state[i]);
+        }
+    }
 
 
 
